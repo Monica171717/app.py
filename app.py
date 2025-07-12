@@ -5,6 +5,8 @@ import os
 app = Flask(__name__)
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+ELEVEN_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+VOICE_ID = os.getenv("VOICE_ID")
 
 @app.route("/chat", methods=["POST"])
 def chat():
