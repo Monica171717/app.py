@@ -1,39 +1,43 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import openai
+import requests
 import os
 
 app = Flask(__name__)
+CORS(app)
 
+# === LE API KEY DALLE VARIABILI ENV ===
 openai.api_key = os.getenv("OPENAI_API_KEY")
-ELEVEN_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = os.getenv("VOICE_ID")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+MONICA_VOICE_ID = os.getenv("VOICE_ID")
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    data = request.json
-    prompt = data.get("prompt")
+    data = request.get_json()
+    user_input = data.get("message", "")
 
-    if not prompt:
-        return jsonify({"error": "No prompt provided"}), 400
+    # Chiedi a OpenAI una risposta
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": user_input}],
+    )
+    reply = response["choices"][0]["message"]["content"]
 
-    if any(word in prompt.lower() for word in ["minorenni", "17 anni", "ragazzina", "bambina"]):
-        return jsonify({"response": "Mi dispiace, non posso continuare questa conversazione."})
+    # Invia la risposta a ElevenLabs
+    audio_response = requests.post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{MONICA_VOICE_ID}",
+        headers={
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        },
+        json={
+            "text": reply,
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+        }
+    )
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Sei Monica, una ragazza sensuale che risponde in modo erotico e provocante, ma blocca ogni riferimento a minori."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return jsonify({"response": response.choices[0].message.content})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/")
-def index():
-    return "Monica AI è online. Usa POST /chat"
+    return audio_response.content, 200, {"Content-Type": "audio/mpeg"}
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True)
