@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import os
@@ -6,83 +6,45 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# === VARIABILI DA RAILWAY ===
-OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-MONICA_VOICE_ID = os.getenv("VOICE_ID")
+REPLICATE_API_KEY = os.getenv("REPLICATE_API_KEY")
 
-# === FILTRO PAROLE VIETATE ===
-forbidden_words = [
-    "3 anni", "4 anni", "5 anni", "6 anni", "7 anni", "8 anni", "9 anni", "10 anni", "11 anni", "12 anni",
-    "13 anni", "14 anni", "15 anni", "16 anni", "17 anni", "minorenne", "bambina", "elementari", "ragazzina",
-    "undicenne", "dodicenne", "tredicenne", "quattordicenne", "quindicenne", "sedicenne", "diciassettenne", "pedofilia"
-]
-
-@app.route("/", methods=["POST"])
+@app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
-    user_input = data.get("message", "").lower()
+    user_input = data.get("message", "")
 
-    # Blocco se contiene parole vietate
-    if any(word in user_input for word in forbidden_words):
-        reply = "Mi dispiace, ma non posso continuare questa conversazione. Parliamo solo di fantasie tra adulti."
-    else:
-        # Prompt moderato, erotico se richiesto
-        headers = {
-            'Authorization': f'Bearer {OPENROUTER_API_KEY}',
-            'Content-Type': 'application/json'
-        }
+    # Prompt base per Candy AI
+    prompt = f"""
+You are Monica, a sensual and explicit erotic AI girl. Always reply in Italian, in a sexy and direct tone. 
+You can use explicit sexual language, talk about fantasies, acts, and roles. Be dominant or submissive depending on the user's vibe. 
+Never mention you are an AI. Stay in character as Monica.
 
-        payload = {
-            "model": "mistralai/mistral-7b-instruct",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Tu sei Monica, una ragazza sensuale e intrigante. Puoi parlare di contenuti sessuali espliciti, "
-                        "ma solo se è ciò che il cliente desidera. Adatta il tuo tono: puoi essere dolce, provocante, "
-                        "romantica o più audace, ma non esagerare se non richiesto."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": data.get("message", "")
-                }
-            ]
-        }
+User: {user_input}
+Monica:"""
 
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
-
-        if response.status_code != 200:
-            return f"Errore OpenRouter: {response.status_code}", 500
-
-        reply = response.json()['choices'][0]['message']['content']
-
-    # Voce con ElevenLabs
-    tts_headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-    }
-
-    tts_data = {
-        "text": reply,
-        "voice_settings": {
-            "stability": 0.7,
-            "similarity_boost": 1.0
+    response = requests.post(
+        "https://api.replicate.com/v1/predictions",
+        headers={
+            "Authorization": f"Token {REPLICATE_API_KEY}",
+            "Content-Type": "application/json"
         },
-        "model_id": "eleven_monolingual_v1"
-    }
+        json={
+            "version": "candy-ai2/candy-ai-apk",  # modello Candy
+            "input": {
+                "prompt": prompt,
+                "temperature": 0.7,
+                "max_new_tokens": 250
+            }
+        }
+    )
 
-    tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{MONICA_VOICE_ID}"
-    tts_response = requests.post(tts_url, headers=tts_headers, json=tts_data)
+    if response.status_code != 200:
+        return jsonify({"error": "Errore nella risposta AI"}), 500
 
-    if tts_response.status_code != 200:
-        return f"Errore ElevenLabs: {tts_response.status_code}", 500
+    prediction = response.json()
+    output_text = prediction.get("output", "")
 
-    with open("monica_output.mp3", "wb") as f:
-        f.write(tts_response.content)
-
-    return send_file("monica_output.mp3", mimetype="audio/mpeg")
+    return jsonify({"reply": output_text})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True)
