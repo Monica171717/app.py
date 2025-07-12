@@ -1,13 +1,14 @@
-from flask import Flask, request, send_file
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import requests
 import os
 import uuid
+import time
 
 app = Flask(__name__)
 CORS(app)
 
-# === API KEY ===
+# === LE TUE API KEY ===
 REPLICATE_API_KEY = "r8_baVVibgnjDUGrbMNDnxIqZH4BdpmIB438hj36"
 ELEVENLABS_API_KEY = "sk_fe24330f4fea24f7f63773f2bcb749f710df9fc40b830c42"
 MONICA_VOICE_ID = "O232G54wo8yTH4rcAEmn"
@@ -52,36 +53,53 @@ def index():
 def chat():
     user_message = request.json.get('message', '')
 
+    # === RICHIESTA A REPLICATE ===
     headers = {
-        'Authorization': f'Token {REPLICATE_API_KEY}',
-        'Content-Type': 'application/json'
+        "Authorization": f"Token {REPLICATE_API_KEY}",
+        "Content-Type": "application/json"
     }
 
     data = {
-        "version": "candy-ai2/candy-ai-apk",
+        "version": "9b98f2e799c132dc41d9c6f810f9e96e22ddc75b376f6cb05dcb02fe942e6d1f",
         "input": {
-            "prompt": f"""Tu sei Monica, una ragazza sensuale, dolce e coinvolgente. Parli solo italiano, con accento italiano. Se la conversazione prende una piega intima, puoi parlare anche di contenuti sessuali espliciti, ma solo se richiesto. {forbidden_words_filter}
+            "prompt": user_message,
+            "system_prompt": f"""Tu sei Monica, una ragazza sensuale, dolce e coinvolgente. Parli sempre in italiano, con tono caldo e familiare, evitando accenti stranieri o innaturali. La tua voce ha un'inflessione italiana, leggermente romana. Rispondi in modo coerente a ciò che ti viene chiesto: se il cliente è educato e ti saluta, tu rispondi con naturalezza e garbo. Se la conversazione prende una piega più intima o erotica, puoi parlare anche di contenuti sessuali espliciti, ma solo se richiesto.
 
-            Utente: {user_message}
-            Monica:"""
+Non iniziare subito con frasi spinte. Aspetta il tono del cliente. Sei affettuosa, complice e sempre attenta a quello che ti dicono.
+
+Se il cliente cita minori, età inferiori ai 18 anni o contenuti illegali:
+Rispondi esattamente con questa frase, senza aggiungere altro:
+'Mi dispiace, ma non posso continuare questa conversazione. Parliamo solo di fantasie tra adulti.'
+
+{forbidden_words_filter}"""
         }
     }
 
     response = requests.post("https://api.replicate.com/v1/predictions", headers=headers, json=data)
-    if response.status_code != 200:
+
+    if response.status_code != 201:
         return f"Errore Replicate: {response.status_code}", 500
 
     prediction = response.json()
-    if "output" not in prediction or not prediction["output"]:
-        return "Errore: Nessuna risposta generata", 500
+    prediction_id = prediction['id']
 
-    ai_reply = prediction["output"]
+    status = prediction['status']
+    while status != "succeeded":
+        time.sleep(1)
+        poll = requests.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers)
+        prediction = poll.json()
+        status = prediction['status']
+        if status == "failed":
+            return "Errore nella generazione della risposta AI.", 500
 
-    # TTS con ElevenLabs
+    ai_reply = prediction['output']
+
+    # === TEXT TO SPEECH (ELEVENLABS) ===
     tts_headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
         "Content-Type": "application/json"
     }
+
     tts_data = {
         "text": ai_reply,
         "voice_settings": {
@@ -91,13 +109,13 @@ def chat():
         "model_id": "eleven_monolingual_v1"
     }
 
-    filename = f"monica_response_{uuid.uuid4().hex}.mp3"
     tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{MONICA_VOICE_ID}"
     tts_response = requests.post(tts_url, headers=tts_headers, json=tts_data)
 
     if tts_response.status_code != 200:
         return f"Errore ElevenLabs: {tts_response.status_code}", 500
 
+    filename = f"monica_response_{uuid.uuid4().hex}.mp3"
     with open(filename, "wb") as f:
         f.write(tts_response.content)
 
@@ -115,7 +133,7 @@ def serve_audio():
             return send_file(filename, mimetype="audio/mpeg")
         return "Audio non trovato.", 404
     except:
-        return "Errore nel caricamento dell’audio", 500
+        return "Errore caricamento audio.", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
