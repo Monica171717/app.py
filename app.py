@@ -6,13 +6,19 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# === API KEY E VOCE MONICA ===
-OPENROUTER_API_KEY = "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"
-ELEVENLABS_API_KEY = "sk_fe24330f4fea24f7f63773f2bcb749f710df9fc40b830c42"
-MONICA_VOICE_ID = "O232G54wo8yTH4rcAEmn"
+# === CHIAVI DALLE VARIABILI DI AMBIENTE ===
+OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+MONICA_VOICE_ID = os.getenv("VOICE_ID")
 
 # === FILTRO PAROLE VIETATE ===
-forbidden_words_filter = "Se il messaggio contiene parole vietate, non rispondere e blocca la conversazione. Le parole vietate sono: 3 anni, 4 anni, 5 anni, 6 anni, 7 anni, 8 anni, 9 anni, 10 anni, 11 anni, 12 anni, 13 anni, 14 anni, 15 anni, 16 anni, 17 anni, minorenne, bambina, elementari, ragazzina, undicenne, dodicenne, tredicenne, quattordicenne, quindicenne, sedicenne, diciassettenne, pedofilia."
+forbidden_words_filter = (
+    "Se il messaggio contiene parole vietate, non rispondere e blocca la conversazione. "
+    "Le parole vietate sono: 3 anni, 4 anni, 5 anni, 6 anni, 7 anni, 8 anni, 9 anni, 10 anni, "
+    "11 anni, 12 anni, 13 anni, 14 anni, 15 anni, 16 anni, 17 anni, minorenne, bambina, "
+    "elementari, ragazzina, undicenne, dodicenne, tredicenne, quattordicenne, quindicenne, "
+    "sedicenne, diciassettenne, pedofilia."
+)
 
 @app.route('/', methods=['GET'])
 def index():
@@ -60,15 +66,10 @@ def chat():
         "messages": [
             {
                 "role": "system",
-                "content": f"""Tu sei Monica, una ragazza sensuale, dolce e coinvolgente. Parli sempre in italiano, con tono caldo e familiare, evitando accenti stranieri o innaturali. La tua voce ha un'inflessione italiana, leggermente romana. Rispondi in modo coerente a ciò che ti viene chiesto: se il cliente è educato e ti saluta, tu rispondi con naturalezza e garbo. Se la conversazione prende una piega più intima o erotica, puoi parlare anche di contenuti sessuali espliciti, ma solo se richiesto.
-
-Non iniziare subito con frasi spinte. Aspetta il tono del cliente. Sei affettuosa, complice e sempre attenta a quello che ti dicono.
-
-Se il cliente cita minori, età inferiori ai 18 anni o contenuti illegali:
-Rispondi esattamente con questa frase, senza aggiungere altro:
-'Mi dispiace, ma non posso continuare questa conversazione. Parliamo solo di fantasie tra adulti.'
-Dopo questa frase, non generare altro testo.
-
+                "content": f"""Rispondi come Monica, una ragazza sensuale e coinvolgente. 
+Puoi usare un linguaggio sessuale esplicito e parlare di fantasie erotiche. 
+Se il cliente menziona minori o contenuti illegali, interrompi con questa frase:
+"Mi dispiace, ma non posso continuare questa conversazione. Parliamo solo di fantasie tra adulti."
 {forbidden_words_filter}"""
             },
             {
@@ -85,7 +86,7 @@ Dopo questa frase, non generare altro testo.
 
     ai_reply = response.json()['choices'][0]['message']['content']
 
-    headers = {
+    tts_headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
         "Content-Type": "application/json"
     }
@@ -93,14 +94,14 @@ Dopo questa frase, non generare altro testo.
     tts_data = {
         "text": ai_reply,
         "voice_settings": {
-            "stability": 0.8,
+            "stability": 0.7,
             "similarity_boost": 1.0
         },
         "model_id": "eleven_monolingual_v1"
     }
 
     tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{MONICA_VOICE_ID}"
-    tts_response = requests.post(tts_url, headers=headers, json=tts_data)
+    tts_response = requests.post(tts_url, headers=tts_headers, json=tts_data)
 
     if tts_response.status_code != 200:
         return f"Errore ElevenLabs: {tts_response.status_code}", 500
